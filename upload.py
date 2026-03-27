@@ -621,3 +621,55 @@ def jazz_drive_upload(filename, folder_name=DEFAULT_JAZZ_FOLDER):
             time.sleep(3)
 
             try:
+                yes_btn = page.get_by_text("Yes", exact=True)
+                if yes_btn.is_visible(timeout=2000):
+                    yes_btn.click()
+            except:
+                pass
+
+            sz = os.path.getsize(filename)/(1024*1024)
+            wait_sec = max(60, int(sz * 4))
+            msg(f"⏳ Uploading *{os.path.basename(filename)}*...\n📦 {sz:.1f} MB\n⏱️ ~{wait_sec}s\n📂 Folder: *{folder_name}*")
+
+            elapsed = 0
+            interval = 30
+            upload_done = False
+
+            while elapsed < wait_sec:
+                time.sleep(interval)
+                elapsed += interval
+
+                try:
+                    completed = page.locator("text=Uploads completed").is_visible()
+                    if completed:
+                        msg(f"✅ Upload detected complete at *{elapsed}s*!")
+                        upload_done = True
+                        time.sleep(3)
+                        break
+                except:
+                    pass
+
+                try:
+                    uploading_hidden = not page.locator("text=/uploading/i").is_visible(timeout=1000)
+                    if elapsed > 60 and uploading_hidden:
+                        upload_done = True
+                        break
+                except:
+                    pass
+
+                if elapsed % 60 == 0:
+                    take_screenshot(page, f"📸 Upload progress | {elapsed}s / {wait_sec}s")
+
+            if not upload_done:
+                take_screenshot(page, f"📸 Final state | {elapsed}s")
+
+            ctx.storage_state(path="state.json")
+
+        except Exception as e:
+            msg(f"❌ Upload error:\n`{str(e)[:200]}`")
+        finally:
+            browser.close()
+
+if __name__ == "__main__":
+    msg("🤖 *BOT ONLINE!*\n\n✅ Ready!\n\n📎 Direct link\n📦 ZIP/RAR link → Auto extract + upload\n📁 Folder auto-create ON")
+    bot.infinity_polling()
