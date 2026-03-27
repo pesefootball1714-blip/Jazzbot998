@@ -1,0 +1,68 @@
+name: Jazz Drive Upload Bot
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 */5 * * *'
+
+jobs:
+  run_bot:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
+
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v3
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y aria2 ffmpeg wget curl --fix-missing || true
+          pip install --upgrade pip
+          pip install playwright pyTelegramBotAPI requests yt-dlp
+          sudo cp $(python -c "import shutil; print(shutil.which('yt-dlp'))") /usr/local/bin/yt-dlp
+          sudo chmod +x /usr/local/bin/yt-dlp
+          yt-dlp --version
+          playwright install chromium --with-deps || playwright install chromium
+
+      - name: Run Bot
+        timeout-minutes: 350
+        continue-on-error: true
+        run: python upload.py
+
+      - name: Save Session
+        if: always()
+        run: |
+          if [ -f state.json ]; then
+            git config --global user.name "GitHub Action"
+            git config --global user.email "action@github.com"
+            git add state.json
+            git commit -m "Save Jazz Drive session" || echo "No changes"
+            git push || echo "Push failed"
+          else
+            echo "No session file, skip."
+          fi
+
+      - name: Auto-Restart Bot
+        if: always()
+        run: |
+          WORKFLOW_FILE="run.yml"
+          RESPONSE=$(curl -s -o /tmp/response.json -w "%{http_code}" \
+            -X POST \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/${WORKFLOW_FILE}/dispatches" \
+            -d '{"ref":"main"}')
+          echo "HTTP Status: $RESPONSE"
+          if [ "$RESPONSE" != "204" ]; then
+            echo "WARNING: Restart fail."
+          else
+            echo "Bot restart ho gaya!"
+          fi
