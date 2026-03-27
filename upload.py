@@ -1,4 +1,4 @@
-import os, re, time, threading, queue, subprocess, requests, zipfile, telebot, shutil
+import os, re, time, threading, queue, subprocess, requests, zipfile, telebot
 from telebot import types
 from playwright.sync_api import sync_playwright
 
@@ -17,9 +17,6 @@ WEB_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, l
 VIDEO_EXTS = [".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm", ".m4v", ".ts"]
 ZIP_EXTS = [".zip", ".rar", ".7z", ".tar", ".gz"]
 
-# Default parent folder in JazzDrive
-DEFAULT_JAZZ_FOLDER = "Uploads"
-
 def is_zip_url(link):
     return any(link.lower().endswith(ext) or ext in link.lower() for ext in ZIP_EXTS)
 
@@ -36,17 +33,14 @@ def file_ok(f, min_mb=1):
     return os.path.exists(f) and os.path.getsize(f)/(1024*1024) >= min_mb
 
 def clean(f):
-    if os.path.exists(f):
-        os.remove(f)
+    if os.path.exists(f): os.remove(f)
 
 def take_screenshot(page, caption="📸"):
     try:
         page.screenshot(path="s.png")
-        with open("s.png", "rb") as f:
-            bot.send_photo(CHAT_ID, f, caption=caption)
+        with open("s.png", "rb") as f: bot.send_photo(CHAT_ID, f, caption=caption)
         os.remove("s.png")
-    except:
-        pass
+    except: pass
 
 # ═══════════════════════════════════════
 # 🔑 Login
@@ -54,10 +48,8 @@ def take_screenshot(page, caption="📸"):
 def do_login(page, context):
     msg("🔐 *LOGIN REQUIRED*\n\n📱 Jazz number bhejein\nFormat: `03XXXXXXXXX`")
     user_context["state"] = "WAITING_FOR_NUMBER"
-
     for _ in range(300):
-        if user_context["state"] == "NUMBER_RECEIVED":
-            break
+        if user_context["state"] == "NUMBER_RECEIVED": break
         time.sleep(1)
     else:
         msg("⏰ Timeout! Task cancel.")
@@ -68,13 +60,10 @@ def do_login(page, context):
     page.locator("#signinbtn").first.click()
     time.sleep(3)
     take_screenshot(page, "📱 Number submit")
-
     msg("✅ Number accept!\n\n🔢 *OTP bhejein:*")
     user_context["state"] = "WAITING_FOR_OTP"
-
     for _ in range(300):
-        if user_context["state"] == "OTP_RECEIVED":
-            break
+        if user_context["state"] == "OTP_RECEIVED": break
         time.sleep(1)
     else:
         msg("⏰ Timeout! Task cancel.")
@@ -86,8 +75,7 @@ def do_login(page, context):
             if f.is_visible():
                 f.fill(digit)
                 time.sleep(0.2)
-        except:
-            pass
+        except: pass
 
     time.sleep(5)
     take_screenshot(page, "🔢 OTP submit")
@@ -119,158 +107,6 @@ def check_login_status():
             browser.close()
 
 # ═══════════════════════════════════════
-# 📁 JazzDrive Folder Helpers
-# ═══════════════════════════════════════
-def folder_exists(page, folder_name):
-    try:
-        page.wait_for_load_state("networkidle", timeout=10000)
-    except:
-        pass
-
-    selectors = [
-        f"text={folder_name}",
-        f"[title='{folder_name}']",
-        f"div:has-text('{folder_name}')",
-        f"span:has-text('{folder_name}')"
-    ]
-
-    for sel in selectors:
-        try:
-            el = page.locator(sel).first
-            if el.is_visible(timeout=2000):
-                return True
-        except:
-            pass
-    return False
-
-def open_folder(page, folder_name):
-    selectors = [
-        f"text={folder_name}",
-        f"[title='{folder_name}']",
-        f"div:has-text('{folder_name}')",
-        f"span:has-text('{folder_name}')"
-    ]
-
-    for sel in selectors:
-        try:
-            el = page.locator(sel).first
-            if el.is_visible(timeout=3000):
-                el.click()
-                time.sleep(2)
-                return True
-        except:
-            pass
-    return False
-
-def create_folder(page, folder_name):
-    # multiple possible selectors because JazzDrive UI change ho sakta hai
-    attempts = [
-        lambda: page.click("button:has-text('New')", timeout=4000),
-        lambda: page.click("button:has-text('Create')", timeout=4000),
-        lambda: page.click("button:has-text('Add')", timeout=4000),
-        lambda: page.click("text=New", timeout=4000),
-    ]
-
-    clicked = False
-    for a in attempts:
-        try:
-            a()
-            clicked = True
-            time.sleep(1)
-            break
-        except:
-            pass
-
-    if not clicked:
-        return False
-
-    # folder option
-    folder_clicked = False
-    folder_attempts = [
-        lambda: page.click("text=Folder", timeout=4000),
-        lambda: page.click("button:has-text('Folder')", timeout=4000),
-        lambda: page.click("div:has-text('Folder')", timeout=4000),
-    ]
-
-    for a in folder_attempts:
-        try:
-            a()
-            folder_clicked = True
-            time.sleep(1)
-            break
-        except:
-            pass
-
-    if not folder_clicked:
-        return False
-
-    # input folder name
-    inputs = [
-        "input[type='text']",
-        "input",
-        "input[placeholder*='name']",
-        "input[placeholder*='Name']"
-    ]
-
-    filled = False
-    for inp in inputs:
-        try:
-            el = page.locator(inp).first
-            if el.is_visible(timeout=3000):
-                el.fill(folder_name)
-                filled = True
-                time.sleep(1)
-                break
-        except:
-            pass
-
-    if not filled:
-        return False
-
-    # create confirm
-    confirms = [
-        lambda: page.click("button:has-text('Create')", timeout=4000),
-        lambda: page.click("button:has-text('OK')", timeout=4000),
-        lambda: page.click("button:has-text('Done')", timeout=4000),
-        lambda: page.click("text=Create", timeout=4000),
-    ]
-
-    for c in confirms:
-        try:
-            c()
-            time.sleep(2)
-            return True
-        except:
-            pass
-
-    return False
-
-def ensure_folder(page, folder_name):
-    try:
-        if folder_exists(page, folder_name):
-            if open_folder(page, folder_name):
-                msg(f"📂 Folder *{folder_name}* open ho gaya!")
-                return True
-
-        msg(f"📁 Folder *{folder_name}* nahi mila, create kar raha hoon...")
-        if create_folder(page, folder_name):
-            time.sleep(2)
-            if open_folder(page, folder_name):
-                msg(f"✅ Folder *{folder_name}* create + open ho gaya!")
-                return True
-
-        # final try
-        if open_folder(page, folder_name):
-            msg(f"📂 Folder *{folder_name}* open ho gaya!")
-            return True
-
-        msg("⚠️ Folder create/open fail. Root me upload hoga.")
-        return False
-    except Exception as e:
-        msg(f"⚠️ Folder error:\n`{str(e)[:120]}`")
-        return False
-
-# ═══════════════════════════════════════
 # 🤖 Bot Commands
 # ═══════════════════════════════════════
 @bot.message_handler(commands=["start"])
@@ -278,8 +114,7 @@ def welcome(m):
     msg(
         "🤖 *JAZZ DRIVE BOT*\n\n"
         "📎 Direct link → Upload\n"
-        "📦 ZIP/RAR link → Extract → Sab episodes upload\n"
-        "📁 Har upload folder ke andar jayega\n\n"
+        "📦 ZIP/RAR link → Extract → Sab episodes upload\n\n"
         "─────────────────────\n"
         "/checklogin — Login status\n"
         "/status — Queue status\n"
@@ -328,21 +163,17 @@ def handle(m):
     if text.startswith("http"):
         if is_zip_url(text):
             task_queue.put({"link": text, "type": "zip"})
-            bot.reply_to(
-                m,
+            bot.reply_to(m,
                 f"📦 *ZIP/RAR link add!*\n"
                 f"Bot download → extract → sab episodes upload karega!\n"
                 f"Queue: *{task_queue.qsize()}*",
-                parse_mode="Markdown"
-            )
+                parse_mode="Markdown")
         else:
             task_queue.put({"link": text, "type": "direct"})
-            bot.reply_to(
-                m,
+            bot.reply_to(m,
                 f"✅ *Direct link add!*\n"
                 f"Queue: *{task_queue.qsize()}*",
-                parse_mode="Markdown"
-            )
+                parse_mode="Markdown")
 
         with worker_lock:
             if not is_working:
@@ -386,11 +217,12 @@ def is_m3u8(url):
 def download_file(url, out_path):
     # M3U8/HLS stream - ffmpeg use karo
     if is_m3u8(url):
+        # mp4 extension force karo
         if not out_path.endswith('.mp4'):
             out_path = out_path.rsplit('.', 1)[0] + '.mp4'
         try:
-            print("M3U8 detected - using ffmpeg")
-            subprocess.run([
+            print(f"M3U8 detected - using ffmpeg")
+            result = subprocess.run([
                 "ffmpeg", "-y",
                 "-user_agent", WEB_UA,
                 "-i", url,
@@ -398,8 +230,7 @@ def download_file(url, out_path):
                 "-bsf:a", "aac_adtstoasc",
                 out_path
             ], capture_output=True, timeout=600)
-            if file_ok(out_path):
-                return True
+            if file_ok(out_path): return True
         except Exception as e:
             print(f"ffmpeg error: {e}")
         return False
@@ -408,17 +239,15 @@ def download_file(url, out_path):
     try:
         out_dir = os.path.dirname(out_path)
         out_name = os.path.basename(out_path)
-        subprocess.run([
+        result = subprocess.run([
             "aria2c", "-x", "16", "-s", "16", "-k", "1M",
             "--timeout=60", "--retry-wait=3", "--max-tries=5",
             f"--user-agent={WEB_UA}",
             "--allow-overwrite=true",
             "-d", out_dir, "-o", out_name, url
         ], capture_output=True, timeout=300)
-        if file_ok(out_path):
-            return True
-    except:
-        pass
+        if file_ok(out_path): return True
+    except: pass
 
     # Method 2: curl
     try:
@@ -426,10 +255,8 @@ def download_file(url, out_path):
             "curl", "-L", "--retry", "3", "--max-time", "300",
             "-H", f"User-Agent: {WEB_UA}", "-o", out_path, url
         ], timeout=300)
-        if file_ok(out_path):
-            return True
-    except:
-        pass
+        if file_ok(out_path): return True
+    except: pass
 
     # Method 3: requests
     try:
@@ -437,12 +264,9 @@ def download_file(url, out_path):
             r.raise_for_status()
             with open(out_path, "wb") as f:
                 for chunk in r.iter_content(chunk_size=8192):
-                    if chunk:
-                        f.write(chunk)
-        if file_ok(out_path):
-            return True
-    except:
-        pass
+                    if chunk: f.write(chunk)
+        if file_ok(out_path): return True
+    except: pass
 
     return False
 
@@ -453,16 +277,16 @@ def process_zip(url):
     zip_path = "/tmp/series_download.zip"
     extract_dir = "/tmp/series_extracted"
 
+    # Cleanup
     clean(zip_path)
     if os.path.exists(extract_dir):
+        import shutil
         shutil.rmtree(extract_dir)
     os.makedirs(extract_dir, exist_ok=True)
 
-    # ZIP file name se folder name banao
-    zip_name = url.split("/")[-1].split("?")[0] or "Series"
-    series_folder = safe_filename(os.path.splitext(zip_name)[0]) or "Series"
-
-    msg(f"⬇️ *ZIP download ho raha hai...*")
+    # Download ZIP
+    sz_hint = ""
+    msg(f"⬇️ *ZIP download ho raha hai...*\n{sz_hint}")
     success = download_file(url, zip_path)
 
     if not success or not file_ok(zip_path):
@@ -478,7 +302,7 @@ def process_zip(url):
             with zipfile.ZipFile(zip_path, "r") as zf:
                 zf.extractall(extract_dir)
         else:
-            # fallback
+            # rar/7z ke liye
             subprocess.run(["unzip", "-o", zip_path, "-d", extract_dir], timeout=120)
     except Exception as e:
         msg(f"❌ Extract fail:\n`{str(e)[:100]}`")
@@ -502,23 +326,24 @@ def process_zip(url):
         f"📁 *{len(video_files)} episodes* mile:\n" +
         "\n".join([f"• {os.path.basename(v)}" for v in video_files[:10]]) +
         ("\n..." if len(video_files) > 10 else "") +
-        f"\n\n☁️ *JazzDrive upload shuru...*\n📂 Folder: *{series_folder}*"
+        f"\n\n☁️ *JazzDrive upload shuru...*"
     )
 
-    # Upload one by one into same series folder
+    # Upload one by one
     for i, video_path in enumerate(video_files, 1):
         fname = os.path.basename(video_path)
         fsize = os.path.getsize(video_path)/(1024*1024)
         msg(f"📤 *Episode {i}/{len(video_files)}*\n📁 {fname}\n📦 {fsize:.1f} MB")
-        jazz_drive_upload(video_path, folder_name=series_folder)
+        jazz_drive_upload(video_path)
         msg(f"✅ *Episode {i}/{len(video_files)} uploaded!*")
 
+    # Cleanup
+    import shutil
     shutil.rmtree(extract_dir, ignore_errors=True)
 
     msg(
         f"🎉 *SERIES UPLOAD COMPLETE!*\n\n"
         f"✅ *{len(video_files)} episodes* JazzDrive pe!\n"
-        f"📂 Folder: *{series_folder}*\n"
         f"Agla link bhejein 🚀"
     )
 
@@ -528,17 +353,16 @@ def process_zip(url):
 def process_direct(url):
     out_name = url.split("/")[-1].split("?")[0] or "downloaded_file.mp4"
     out_name = safe_filename(out_name)
-    if "." not in out_name:
-        out_name += ".mp4"
-
+    if "." not in out_name: out_name += ".mp4"
+    # M3U8 ko mp4 mein convert karenge
     if ".m3u8" in out_name.lower():
         out_name = out_name.lower().replace(".m3u8", ".mp4")
-        out_name = re.sub(r'[.]av[0-9]+', '', out_name)
-
+        out_name = re.sub(r'[.]av[0-9]+', '', out_name)  # .av1 etc remove
     out_path = f"/tmp/{out_name}"
-    clean(out_path)
 
+    clean(out_path)
     msg(f"⬇️ *Downloading...*\n📁 {out_name}")
+
     success = download_file(url, out_path)
 
     if not success:
@@ -546,15 +370,14 @@ def process_direct(url):
         return
 
     sz = os.path.getsize(out_path)/(1024*1024)
-    msg(f"✅ Downloaded! *{sz:.1f} MB*\n\n☁️ JazzDrive upload ho raha hai...\n📂 Folder: *{DEFAULT_JAZZ_FOLDER}*")
-
-    jazz_drive_upload(out_path, folder_name=DEFAULT_JAZZ_FOLDER)
+    msg(f"✅ Downloaded! *{sz:.1f} MB*\n\n☁️ JazzDrive upload ho raha hai...")
+    jazz_drive_upload(out_path)
     clean(out_path)
 
 # ═══════════════════════════════════════
 # ☁️ JazzDrive Upload
 # ═══════════════════════════════════════
-def jazz_drive_upload(filename, folder_name=DEFAULT_JAZZ_FOLDER):
+def jazz_drive_upload(filename):
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True, args=BROWSER_ARGS)
         ctx = browser.new_context(
@@ -562,12 +385,10 @@ def jazz_drive_upload(filename, folder_name=DEFAULT_JAZZ_FOLDER):
             storage_state="state.json" if os.path.exists("state.json") else None
         )
         page = ctx.new_page()
-
         try:
             page.goto("https://cloud.jazzdrive.com.pk/", wait_until="networkidle", timeout=90000)
             time.sleep(3)
 
-            # 🔐 Login check
             if page.locator("#msisdn").is_visible():
                 msg("⚠️ Session expire!\nLogin karo...")
                 ok = do_login(page, ctx)
@@ -578,91 +399,62 @@ def jazz_drive_upload(filename, folder_name=DEFAULT_JAZZ_FOLDER):
                 time.sleep(3)
 
             ctx.storage_state(path="state.json")
-
-            # 📁 Ensure folder
-            ensure_folder(page, folder_name)
-
             abs_path = os.path.abspath(filename)
 
             # Upload button
-            upload_opened = False
             try:
-                page.evaluate("""
-                    document.querySelectorAll('button').forEach(b => {
-                        const t = (b.innerText || b.textContent || '').toLowerCase();
-                        if (t.includes('upload')) b.click();
-                    });
-                """)
+                page.evaluate("document.querySelectorAll('header button').forEach(b => { if(b.innerHTML.includes('svg') || b.innerHTML.includes('upload')) b.click(); })")
                 time.sleep(2)
-                upload_opened = True
-            except:
-                pass
+            except: pass
 
-            # File chooser / input
+            # File chooser
             try:
                 dialog = page.locator("div[role='dialog']")
-                if dialog.is_visible(timeout=3000):
-                    try:
-                        with page.expect_file_chooser(timeout=5000) as fc_info:
-                            dialog.locator("text=/upload/i").first.click()
-                        fc_info.value.set_files(abs_path)
-                    except:
-                        page.locator("input[type=file]").set_input_files(abs_path)
+                if dialog.is_visible():
+                    with page.expect_file_chooser() as fc_info:
+                        dialog.locator("text=/upload/i").first.click()
+                    fc_info.value.set_files(abs_path)
                 else:
                     page.locator("input[type=file]").set_input_files(abs_path)
             except:
-                try:
-                    page.locator("input[type=file]").set_input_files(abs_path)
-                except Exception as e:
-                    msg(f"❌ File chooser fail:\n`{str(e)[:150]}`")
-                    take_screenshot(page, "❌ Upload chooser fail")
-                    return
+                page.locator("input[type=file]").set_input_files(abs_path)
 
             time.sleep(3)
-
             try:
                 yes_btn = page.get_by_text("Yes", exact=True)
-                if yes_btn.is_visible(timeout=2000):
-                    yes_btn.click()
-            except:
-                pass
+                if yes_btn.is_visible(): yes_btn.click()
+            except: pass
 
             sz = os.path.getsize(filename)/(1024*1024)
             wait_sec = max(60, int(sz * 4))
-            msg(f"⏳ Uploading *{os.path.basename(filename)}*...\n📦 {sz:.1f} MB\n⏱️ ~{wait_sec}s\n📂 Folder: *{folder_name}*")
-
+            msg(f"⏳ Uploading {os.path.basename(filename)}... (~{wait_sec}s)")
+            
+            # Upload complete detect karo - max wait_sec tak
             elapsed = 0
             interval = 30
             upload_done = False
-
+            
             while elapsed < wait_sec:
                 time.sleep(interval)
                 elapsed += interval
-
+                
+                # "Uploads completed" text check karo
                 try:
                     completed = page.locator("text=Uploads completed").is_visible()
                     if completed:
-                        msg(f"✅ Upload detected complete at *{elapsed}s*!")
+                        msg(f"✅ Upload detected complete at {elapsed}s!")
                         upload_done = True
                         time.sleep(3)
                         break
-                except:
-                    pass
-
-                try:
-                    uploading_hidden = not page.locator("text=/uploading/i").is_visible(timeout=1000)
-                    if elapsed > 60 and uploading_hidden:
-                        upload_done = True
-                        break
-                except:
-                    pass
-
+                except: pass
+                
+                # Har 60 second mein screenshot
                 if elapsed % 60 == 0:
                     take_screenshot(page, f"📸 Upload progress | {elapsed}s / {wait_sec}s")
-
+            
             if not upload_done:
                 take_screenshot(page, f"📸 Final state | {elapsed}s")
-
+            
             ctx.storage_state(path="state.json")
 
         except Exception as e:
@@ -671,5 +463,5 @@ def jazz_drive_upload(filename, folder_name=DEFAULT_JAZZ_FOLDER):
             browser.close()
 
 if __name__ == "__main__":
-    msg("🤖 *BOT ONLINE!*\n\n✅ Ready!\n\n📎 Direct link\n📦 ZIP/RAR link → Auto extract + upload\n📁 Folder auto-create ON")
+    msg("🤖 *BOT ONLINE!*\n\n✅ Ready!\n\n📎 Direct link\n📦 ZIP/RAR link → Auto extract + upload")
     bot.infinity_polling()
