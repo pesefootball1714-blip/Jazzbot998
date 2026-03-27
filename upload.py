@@ -17,8 +17,8 @@ WEB_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, l
 VIDEO_EXTS = [".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm", ".m4v", ".ts"]
 ZIP_EXTS = [".zip", ".rar", ".7z", ".tar", ".gz"]
 
-# ✅ TARGET FOLDER
-TARGET_FOLDER = "IMPORTANT THINGS"
+# Default parent folder in JazzDrive
+DEFAULT_JAZZ_FOLDER = "Uploads"
 
 def is_zip_url(link):
     return any(link.lower().endswith(ext) or ext in link.lower() for ext in ZIP_EXTS)
@@ -49,134 +49,12 @@ def take_screenshot(page, caption="📸"):
         pass
 
 # ═══════════════════════════════════════
-# 📁 IMPORTANT THINGS folder ensure
-# ═══════════════════════════════════════
-def ensure_upload_folder(page, folder_name=TARGET_FOLDER):
-    """
-    JazzDrive mein target folder open/create karta hai.
-    Agar folder na ho to create karega, warna usko open karega.
-    """
-    try:
-        time.sleep(3)
-
-        # Try 1: existing folder open
-        try:
-            folder = page.get_by_text(folder_name, exact=True)
-            if folder.first.is_visible(timeout=5000):
-                folder.first.click()
-                time.sleep(3)
-                return True
-        except:
-            pass
-
-        # Try 2: reload and retry
-        try:
-            page.reload(wait_until="networkidle", timeout=90000)
-            time.sleep(4)
-            folder = page.get_by_text(folder_name, exact=True)
-            if folder.first.is_visible(timeout=5000):
-                folder.first.click()
-                time.sleep(3)
-                return True
-        except:
-            pass
-
-        # Try 3: create folder
-        try:
-            msg(f"📁 Folder `{folder_name}` nahi mila.\nCreate kar raha hoon...")
-
-            created = False
-
-            possible_buttons = [
-                "text=/new folder/i",
-                "text=/create folder/i",
-                "text=/folder/i",
-                "button:has-text('New')",
-                "button:has-text('Create')",
-                "button:has-text('+')"
-            ]
-
-            for sel in possible_buttons:
-                try:
-                    el = page.locator(sel).first
-                    if el.is_visible():
-                        el.click()
-                        time.sleep(2)
-                        created = True
-                        break
-                except:
-                    pass
-
-            # JS fallback
-            if not created:
-                try:
-                    page.evaluate("""
-                        () => {
-                            const els = [...document.querySelectorAll('button,div,span')];
-                            const btn = els.find(e =>
-                                /new folder|create folder|folder|new/i.test((e.innerText || '').trim())
-                            );
-                            if (btn) btn.click();
-                        }
-                    """)
-                    time.sleep(2)
-                except:
-                    pass
-
-            # Input fill
-            try:
-                inputs = page.locator("input")
-                count = inputs.count()
-                for i in range(count - 1, -1, -1):
-                    try:
-                        inp = inputs.nth(i)
-                        if inp.is_visible():
-                            inp.fill(folder_name)
-                            time.sleep(1)
-                            break
-                    except:
-                        pass
-            except:
-                pass
-
-            # Confirm create
-            for txt in ["Create", "OK", "Ok", "Done", "Save"]:
-                try:
-                    btn = page.get_by_text(txt, exact=True)
-                    if btn.is_visible():
-                        btn.click()
-                        time.sleep(3)
-                        break
-                except:
-                    pass
-
-            page.reload(wait_until="networkidle", timeout=90000)
-            time.sleep(4)
-
-            try:
-                folder = page.get_by_text(folder_name, exact=True)
-                if folder.first.is_visible(timeout=8000):
-                    folder.first.click()
-                    time.sleep(3)
-                    msg(f"✅ `{folder_name}` folder open ho gaya!")
-                    return True
-            except:
-                pass
-
-        except Exception as e:
-            msg(f"⚠️ Folder create/open issue:\n`{str(e)[:120]}`")
-
-    except Exception as e:
-        msg(f"⚠️ Folder navigation error:\n`{str(e)[:120]}`")
-
-    return False
-
-# ═══════════════════════════════════════
 # 🔑 Login
 # ═══════════════════════════════════════
 def do_login(page, context):
     msg("🔐 *LOGIN REQUIRED*\n\n📱 Jazz number bhejein\nFormat: `03XXXXXXXXX`")
     user_context["state"] = "WAITING_FOR_NUMBER"
+
     for _ in range(300):
         if user_context["state"] == "NUMBER_RECEIVED":
             break
@@ -190,6 +68,7 @@ def do_login(page, context):
     page.locator("#signinbtn").first.click()
     time.sleep(3)
     take_screenshot(page, "📱 Number submit")
+
     msg("✅ Number accept!\n\n🔢 *OTP bhejein:*")
     user_context["state"] = "WAITING_FOR_OTP"
 
@@ -233,11 +112,163 @@ def check_login_status():
                 msg("⚠️ Session expire!\nLogin karte hain...")
                 do_login(page, ctx)
             else:
-                msg(f"✅ *LOGIN VALID!*\n\n📁 Folder: `{TARGET_FOLDER}`\n🚀 Link bhejein!")
+                msg("✅ *LOGIN VALID!*\n\n🚀 Link bhejein!")
         except Exception as e:
             msg(f"❌ Error:\n`{str(e)[:150]}`")
         finally:
             browser.close()
+
+# ═══════════════════════════════════════
+# 📁 JazzDrive Folder Helpers
+# ═══════════════════════════════════════
+def folder_exists(page, folder_name):
+    try:
+        page.wait_for_load_state("networkidle", timeout=10000)
+    except:
+        pass
+
+    selectors = [
+        f"text={folder_name}",
+        f"[title='{folder_name}']",
+        f"div:has-text('{folder_name}')",
+        f"span:has-text('{folder_name}')"
+    ]
+
+    for sel in selectors:
+        try:
+            el = page.locator(sel).first
+            if el.is_visible(timeout=2000):
+                return True
+        except:
+            pass
+    return False
+
+def open_folder(page, folder_name):
+    selectors = [
+        f"text={folder_name}",
+        f"[title='{folder_name}']",
+        f"div:has-text('{folder_name}')",
+        f"span:has-text('{folder_name}')"
+    ]
+
+    for sel in selectors:
+        try:
+            el = page.locator(sel).first
+            if el.is_visible(timeout=3000):
+                el.click()
+                time.sleep(2)
+                return True
+        except:
+            pass
+    return False
+
+def create_folder(page, folder_name):
+    # multiple possible selectors because JazzDrive UI change ho sakta hai
+    attempts = [
+        lambda: page.click("button:has-text('New')", timeout=4000),
+        lambda: page.click("button:has-text('Create')", timeout=4000),
+        lambda: page.click("button:has-text('Add')", timeout=4000),
+        lambda: page.click("text=New", timeout=4000),
+    ]
+
+    clicked = False
+    for a in attempts:
+        try:
+            a()
+            clicked = True
+            time.sleep(1)
+            break
+        except:
+            pass
+
+    if not clicked:
+        return False
+
+    # folder option
+    folder_clicked = False
+    folder_attempts = [
+        lambda: page.click("text=Folder", timeout=4000),
+        lambda: page.click("button:has-text('Folder')", timeout=4000),
+        lambda: page.click("div:has-text('Folder')", timeout=4000),
+    ]
+
+    for a in folder_attempts:
+        try:
+            a()
+            folder_clicked = True
+            time.sleep(1)
+            break
+        except:
+            pass
+
+    if not folder_clicked:
+        return False
+
+    # input folder name
+    inputs = [
+        "input[type='text']",
+        "input",
+        "input[placeholder*='name']",
+        "input[placeholder*='Name']"
+    ]
+
+    filled = False
+    for inp in inputs:
+        try:
+            el = page.locator(inp).first
+            if el.is_visible(timeout=3000):
+                el.fill(folder_name)
+                filled = True
+                time.sleep(1)
+                break
+        except:
+            pass
+
+    if not filled:
+        return False
+
+    # create confirm
+    confirms = [
+        lambda: page.click("button:has-text('Create')", timeout=4000),
+        lambda: page.click("button:has-text('OK')", timeout=4000),
+        lambda: page.click("button:has-text('Done')", timeout=4000),
+        lambda: page.click("text=Create", timeout=4000),
+    ]
+
+    for c in confirms:
+        try:
+            c()
+            time.sleep(2)
+            return True
+        except:
+            pass
+
+    return False
+
+def ensure_folder(page, folder_name):
+    try:
+        if folder_exists(page, folder_name):
+            if open_folder(page, folder_name):
+                msg(f"📂 Folder *{folder_name}* open ho gaya!")
+                return True
+
+        msg(f"📁 Folder *{folder_name}* nahi mila, create kar raha hoon...")
+        if create_folder(page, folder_name):
+            time.sleep(2)
+            if open_folder(page, folder_name):
+                msg(f"✅ Folder *{folder_name}* create + open ho gaya!")
+                return True
+
+        # final try
+        if open_folder(page, folder_name):
+            msg(f"📂 Folder *{folder_name}* open ho gaya!")
+            return True
+
+        msg("⚠️ Folder create/open fail. Root me upload hoga.")
+        return False
+    except Exception as e:
+        msg(f"⚠️ Folder error:\n`{str(e)[:120]}`")
+        return False
 
 # ═══════════════════════════════════════
 # 🤖 Bot Commands
@@ -246,9 +277,9 @@ def check_login_status():
 def welcome(m):
     msg(
         "🤖 *JAZZ DRIVE BOT*\n\n"
-        f"📁 Upload folder: *{TARGET_FOLDER}*\n"
         "📎 Direct link → Upload\n"
-        "📦 ZIP/RAR link → Extract → Sab episodes upload\n\n"
+        "📦 ZIP/RAR link → Extract → Sab episodes upload\n"
+        "📁 Har upload folder ke andar jayega\n\n"
         "─────────────────────\n"
         "/checklogin — Login status\n"
         "/status — Queue status\n"
@@ -264,7 +295,7 @@ def cmd_check(m):
 def cmd_status(m):
     icon = "🟢" if is_working else "🔴"
     cookie = "✅" if os.path.exists("state.json") else "❌"
-    msg(f"📊 *STATUS*\n\n{icon} {'Working' if is_working else 'Idle'}\n📋 Queue: {task_queue.qsize()}\n🍪 Session: {cookie}\n📁 Folder: `{TARGET_FOLDER}`")
+    msg(f"📊 *STATUS*\n\n{icon} {'Working' if is_working else 'Idle'}\n📋 Queue: {task_queue.qsize()}\n🍪 Session: {cookie}")
 
 @bot.message_handler(commands=["cmd"])
 def cmd_shell(m):
@@ -297,18 +328,21 @@ def handle(m):
     if text.startswith("http"):
         if is_zip_url(text):
             task_queue.put({"link": text, "type": "zip"})
-            bot.reply_to(m,
+            bot.reply_to(
+                m,
                 f"📦 *ZIP/RAR link add!*\n"
-                f"Bot download → extract → sab episodes `{TARGET_FOLDER}` mein upload karega!\n"
+                f"Bot download → extract → sab episodes upload karega!\n"
                 f"Queue: *{task_queue.qsize()}*",
-                parse_mode="Markdown")
+                parse_mode="Markdown"
+            )
         else:
             task_queue.put({"link": text, "type": "direct"})
-            bot.reply_to(m,
+            bot.reply_to(
+                m,
                 f"✅ *Direct link add!*\n"
-                f"📁 Upload folder: `{TARGET_FOLDER}`\n"
                 f"Queue: *{task_queue.qsize()}*",
-                parse_mode="Markdown")
+                parse_mode="Markdown"
+            )
 
         with worker_lock:
             if not is_working:
@@ -352,12 +386,11 @@ def is_m3u8(url):
 def download_file(url, out_path):
     # M3U8/HLS stream - ffmpeg use karo
     if is_m3u8(url):
-        # mp4 extension force karo
         if not out_path.endswith('.mp4'):
             out_path = out_path.rsplit('.', 1)[0] + '.mp4'
         try:
-            print(f"M3U8 detected - using ffmpeg")
-            result = subprocess.run([
+            print("M3U8 detected - using ffmpeg")
+            subprocess.run([
                 "ffmpeg", "-y",
                 "-user_agent", WEB_UA,
                 "-i", url,
@@ -375,7 +408,7 @@ def download_file(url, out_path):
     try:
         out_dir = os.path.dirname(out_path)
         out_name = os.path.basename(out_path)
-        result = subprocess.run([
+        subprocess.run([
             "aria2c", "-x", "16", "-s", "16", "-k", "1M",
             "--timeout=60", "--retry-wait=3", "--max-tries=5",
             f"--user-agent={WEB_UA}",
@@ -420,15 +453,16 @@ def process_zip(url):
     zip_path = "/tmp/series_download.zip"
     extract_dir = "/tmp/series_extracted"
 
-    # Cleanup
     clean(zip_path)
     if os.path.exists(extract_dir):
         shutil.rmtree(extract_dir)
     os.makedirs(extract_dir, exist_ok=True)
 
-    # Download ZIP
-    sz_hint = ""
-    msg(f"⬇️ *ZIP download ho raha hai...*\n{sz_hint}")
+    # ZIP file name se folder name banao
+    zip_name = url.split("/")[-1].split("?")[0] or "Series"
+    series_folder = safe_filename(os.path.splitext(zip_name)[0]) or "Series"
+
+    msg(f"⬇️ *ZIP download ho raha hai...*")
     success = download_file(url, zip_path)
 
     if not success or not file_ok(zip_path):
@@ -444,7 +478,7 @@ def process_zip(url):
             with zipfile.ZipFile(zip_path, "r") as zf:
                 zf.extractall(extract_dir)
         else:
-            # rar/7z ke liye fallback
+            # fallback
             subprocess.run(["unzip", "-o", zip_path, "-d", extract_dir], timeout=120)
     except Exception as e:
         msg(f"❌ Extract fail:\n`{str(e)[:100]}`")
@@ -468,23 +502,23 @@ def process_zip(url):
         f"📁 *{len(video_files)} episodes* mile:\n" +
         "\n".join([f"• {os.path.basename(v)}" for v in video_files[:10]]) +
         ("\n..." if len(video_files) > 10 else "") +
-        f"\n\n☁️ *JazzDrive upload shuru...*\n📂 Folder: `{TARGET_FOLDER}`"
+        f"\n\n☁️ *JazzDrive upload shuru...*\n📂 Folder: *{series_folder}*"
     )
 
-    # Upload one by one
+    # Upload one by one into same series folder
     for i, video_path in enumerate(video_files, 1):
         fname = os.path.basename(video_path)
         fsize = os.path.getsize(video_path)/(1024*1024)
         msg(f"📤 *Episode {i}/{len(video_files)}*\n📁 {fname}\n📦 {fsize:.1f} MB")
-        jazz_drive_upload(video_path)
+        jazz_drive_upload(video_path, folder_name=series_folder)
         msg(f"✅ *Episode {i}/{len(video_files)} uploaded!*")
 
-    # Cleanup
     shutil.rmtree(extract_dir, ignore_errors=True)
 
     msg(
         f"🎉 *SERIES UPLOAD COMPLETE!*\n\n"
-        f"✅ *{len(video_files)} episodes* `{TARGET_FOLDER}` pe!\n"
+        f"✅ *{len(video_files)} episodes* JazzDrive pe!\n"
+        f"📂 Folder: *{series_folder}*\n"
         f"Agla link bhejein 🚀"
     )
 
@@ -497,16 +531,14 @@ def process_direct(url):
     if "." not in out_name:
         out_name += ".mp4"
 
-    # M3U8 ko mp4 mein convert karenge
     if ".m3u8" in out_name.lower():
         out_name = out_name.lower().replace(".m3u8", ".mp4")
-        out_name = re.sub(r'[.]av[0-9]+', '', out_name)  # .av1 etc remove
+        out_name = re.sub(r'[.]av[0-9]+', '', out_name)
 
     out_path = f"/tmp/{out_name}"
-
     clean(out_path)
-    msg(f"⬇️ *Downloading...*\n📁 {out_name}")
 
+    msg(f"⬇️ *Downloading...*\n📁 {out_name}")
     success = download_file(url, out_path)
 
     if not success:
@@ -514,14 +546,15 @@ def process_direct(url):
         return
 
     sz = os.path.getsize(out_path)/(1024*1024)
-    msg(f"✅ Downloaded! *{sz:.1f} MB*\n\n☁️ JazzDrive upload ho raha hai...\n📂 Folder: `{TARGET_FOLDER}`")
-    jazz_drive_upload(out_path)
+    msg(f"✅ Downloaded! *{sz:.1f} MB*\n\n☁️ JazzDrive upload ho raha hai...\n📂 Folder: *{DEFAULT_JAZZ_FOLDER}*")
+
+    jazz_drive_upload(out_path, folder_name=DEFAULT_JAZZ_FOLDER)
     clean(out_path)
 
 # ═══════════════════════════════════════
 # ☁️ JazzDrive Upload
 # ═══════════════════════════════════════
-def jazz_drive_upload(filename):
+def jazz_drive_upload(filename, folder_name=DEFAULT_JAZZ_FOLDER):
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True, args=BROWSER_ARGS)
         ctx = browser.new_context(
@@ -529,10 +562,12 @@ def jazz_drive_upload(filename):
             storage_state="state.json" if os.path.exists("state.json") else None
         )
         page = ctx.new_page()
+
         try:
             page.goto("https://cloud.jazzdrive.com.pk/", wait_until="networkidle", timeout=90000)
             time.sleep(3)
 
+            # 🔐 Login check
             if page.locator("#msisdn").is_visible():
                 msg("⚠️ Session expire!\nLogin karo...")
                 ok = do_login(page, ctx)
@@ -543,47 +578,46 @@ def jazz_drive_upload(filename):
                 time.sleep(3)
 
             ctx.storage_state(path="state.json")
+
+            # 📁 Ensure folder
+            ensure_folder(page, folder_name)
+
             abs_path = os.path.abspath(filename)
 
-            # ✅ IMPORTANT THINGS folder open/create
-            msg(f"📂 Target folder check ho raha hai...\n`{TARGET_FOLDER}`")
-            folder_ok = ensure_upload_folder(page, TARGET_FOLDER)
-            if not folder_ok:
-                msg("⚠️ Folder open nahi hua.\nUpload root mein ja sakta hai.")
-            else:
-                msg(f"✅ Upload folder set: `{TARGET_FOLDER}`")
-
             # Upload button
+            upload_opened = False
             try:
                 page.evaluate("""
-                    () => {
-                        const els = [...document.querySelectorAll('button,div,span')];
-                        const btn = els.find(e =>
-                            /upload/i.test((e.innerText || '').trim()) ||
-                            (e.innerHTML || '').toLowerCase().includes('upload')
-                        );
-                        if (btn) btn.click();
-                    }
+                    document.querySelectorAll('button').forEach(b => {
+                        const t = (b.innerText || b.textContent || '').toLowerCase();
+                        if (t.includes('upload')) b.click();
+                    });
                 """)
                 time.sleep(2)
+                upload_opened = True
             except:
                 pass
 
-            # File chooser
+            # File chooser / input
             try:
                 dialog = page.locator("div[role='dialog']")
-                if dialog.is_visible():
-                    with page.expect_file_chooser() as fc_info:
-                        dialog.locator("text=/upload/i").first.click()
-                    fc_info.value.set_files(abs_path)
+                if dialog.is_visible(timeout=3000):
+                    try:
+                        with page.expect_file_chooser(timeout=5000) as fc_info:
+                            dialog.locator("text=/upload/i").first.click()
+                        fc_info.value.set_files(abs_path)
+                    except:
+                        page.locator("input[type=file]").set_input_files(abs_path)
                 else:
                     page.locator("input[type=file]").set_input_files(abs_path)
             except:
                 try:
                     page.locator("input[type=file]").set_input_files(abs_path)
                 except Exception as e:
-                    msg(f"❌ File chooser error:\n`{str(e)[:150]}`")
+                    msg(f"❌ File chooser fail:\n`{str(e)[:150]}`")
+                    take_screenshot(page, "❌ Upload chooser fail")
                     return
 
             time.sleep(3)
+
             try:
