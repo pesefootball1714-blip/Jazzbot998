@@ -2,7 +2,7 @@ import os, re, time, threading, queue, subprocess, requests, zipfile, telebot, s
 from telebot import types
 from playwright.sync_api import sync_playwright
 
-TOKEN = "YOUR_BOT_TOKEN"
+TOKEN = "8617995670:AAHGqu84ueii64ptU6OO6KXtgUNY3WfZgxI"
 CHAT_ID = 5562046180
 bot = telebot.TeleBot(TOKEN)
 
